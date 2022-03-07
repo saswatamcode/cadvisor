@@ -315,7 +315,7 @@ func processStatsFromProcs(rootFs string, cgroupPath string, rootPid int) (info.
 func (h *Handler) schedulerStatsFromProcs() (info.CpuSchedstat, error) {
 	pids, err := h.cgroupManager.GetAllPids()
 	if err != nil {
-		return info.CpuSchedstat{}, fmt.Errorf("Could not get PIDs for container %d: %w", h.pid, err)
+		return info.CpuSchedstat{}, fmt.Errorf("could not get PIDs for container %d: %w", h.pid, err)
 	}
 	alivePids := make(map[int]struct{}, len(pids))
 	for _, pid := range pids {
@@ -787,116 +787,12 @@ func setCPUStats(s *cgroups.Stats, ret *info.ContainerStats, withPerCPU bool) {
 	ret.Cpu.Usage.PerCpu = s.CpuStats.CpuUsage.PercpuUsage
 }
 
-func setDiskIoStats(s *cgroups.Stats, ret *info.ContainerStats) {
-	ret.DiskIo.IoServiceBytes = diskStatsCopy(s.BlkioStats.IoServiceBytesRecursive)
-	ret.DiskIo.IoServiced = diskStatsCopy(s.BlkioStats.IoServicedRecursive)
-	ret.DiskIo.IoQueued = diskStatsCopy(s.BlkioStats.IoQueuedRecursive)
-	ret.DiskIo.Sectors = diskStatsCopy(s.BlkioStats.SectorsRecursive)
-	ret.DiskIo.IoServiceTime = diskStatsCopy(s.BlkioStats.IoServiceTimeRecursive)
-	ret.DiskIo.IoWaitTime = diskStatsCopy(s.BlkioStats.IoWaitTimeRecursive)
-	ret.DiskIo.IoMerged = diskStatsCopy(s.BlkioStats.IoMergedRecursive)
-	ret.DiskIo.IoTime = diskStatsCopy(s.BlkioStats.IoTimeRecursive)
-}
-
-func setMemoryStats(s *cgroups.Stats, ret *info.ContainerStats) {
-	ret.Memory.Usage = s.MemoryStats.Usage.Usage
-	ret.Memory.MaxUsage = s.MemoryStats.Usage.MaxUsage
-	ret.Memory.Failcnt = s.MemoryStats.Usage.Failcnt
-
-	if cgroups.IsCgroup2UnifiedMode() {
-		ret.Memory.Cache = s.MemoryStats.Stats["file"]
-		ret.Memory.RSS = s.MemoryStats.Stats["anon"]
-		ret.Memory.Swap = s.MemoryStats.SwapUsage.Usage - s.MemoryStats.Usage.Usage
-		ret.Memory.MappedFile = s.MemoryStats.Stats["file_mapped"]
-	} else if s.MemoryStats.UseHierarchy {
-		ret.Memory.Cache = s.MemoryStats.Stats["total_cache"]
-		ret.Memory.RSS = s.MemoryStats.Stats["total_rss"]
-		ret.Memory.Swap = s.MemoryStats.Stats["total_swap"]
-		ret.Memory.MappedFile = s.MemoryStats.Stats["total_mapped_file"]
-	} else {
-		ret.Memory.Cache = s.MemoryStats.Stats["cache"]
-		ret.Memory.RSS = s.MemoryStats.Stats["rss"]
-		ret.Memory.Swap = s.MemoryStats.Stats["swap"]
-		ret.Memory.MappedFile = s.MemoryStats.Stats["mapped_file"]
-	}
-	if v, ok := s.MemoryStats.Stats["pgfault"]; ok {
-		ret.Memory.ContainerData.Pgfault = v
-		ret.Memory.HierarchicalData.Pgfault = v
-	}
-	if v, ok := s.MemoryStats.Stats["pgmajfault"]; ok {
-		ret.Memory.ContainerData.Pgmajfault = v
-		ret.Memory.HierarchicalData.Pgmajfault = v
-	}
-
-	inactiveFileKeyName := "total_inactive_file"
-	if cgroups.IsCgroup2UnifiedMode() {
-		inactiveFileKeyName = "inactive_file"
-	}
-
-	workingSet := ret.Memory.Usage
-	if v, ok := s.MemoryStats.Stats[inactiveFileKeyName]; ok {
-		if workingSet < v {
-			workingSet = 0
-		} else {
-			workingSet -= v
-		}
-	}
-	ret.Memory.WorkingSet = workingSet
-}
-
-func setCPUSetStats(s *cgroups.Stats, ret *info.ContainerStats) {
-	ret.CpuSet.MemoryMigrate = s.CPUSetStats.MemoryMigrate
-}
-
 func getNumaStats(memoryStats map[uint8]uint64) map[uint8]uint64 {
 	stats := make(map[uint8]uint64, len(memoryStats))
 	for node, usage := range memoryStats {
 		stats[node] = usage
 	}
 	return stats
-}
-
-func setMemoryNumaStats(s *cgroups.Stats, ret *info.ContainerStats) {
-	ret.Memory.ContainerData.NumaStats.File = getNumaStats(s.MemoryStats.PageUsageByNUMA.File.Nodes)
-	ret.Memory.ContainerData.NumaStats.Anon = getNumaStats(s.MemoryStats.PageUsageByNUMA.Anon.Nodes)
-	ret.Memory.ContainerData.NumaStats.Unevictable = getNumaStats(s.MemoryStats.PageUsageByNUMA.Unevictable.Nodes)
-
-	ret.Memory.HierarchicalData.NumaStats.File = getNumaStats(s.MemoryStats.PageUsageByNUMA.Hierarchical.File.Nodes)
-	ret.Memory.HierarchicalData.NumaStats.Anon = getNumaStats(s.MemoryStats.PageUsageByNUMA.Hierarchical.Anon.Nodes)
-	ret.Memory.HierarchicalData.NumaStats.Unevictable = getNumaStats(s.MemoryStats.PageUsageByNUMA.Hierarchical.Unevictable.Nodes)
-}
-
-func setHugepageStats(s *cgroups.Stats, ret *info.ContainerStats) {
-	ret.Hugetlb = make(map[string]info.HugetlbStats)
-	for k, v := range s.HugetlbStats {
-		ret.Hugetlb[k] = info.HugetlbStats{
-			Usage:    v.Usage,
-			MaxUsage: v.MaxUsage,
-			Failcnt:  v.Failcnt,
-		}
-	}
-}
-
-func setNetworkStats(libcontainerStats *libcontainer.Stats, ret *info.ContainerStats) {
-	ret.Network.Interfaces = make([]info.InterfaceStats, len(libcontainerStats.Interfaces))
-	for i := range libcontainerStats.Interfaces {
-		ret.Network.Interfaces[i] = info.InterfaceStats{
-			Name:      libcontainerStats.Interfaces[i].Name,
-			RxBytes:   libcontainerStats.Interfaces[i].RxBytes,
-			RxPackets: libcontainerStats.Interfaces[i].RxPackets,
-			RxErrors:  libcontainerStats.Interfaces[i].RxErrors,
-			RxDropped: libcontainerStats.Interfaces[i].RxDropped,
-			TxBytes:   libcontainerStats.Interfaces[i].TxBytes,
-			TxPackets: libcontainerStats.Interfaces[i].TxPackets,
-			TxErrors:  libcontainerStats.Interfaces[i].TxErrors,
-			TxDropped: libcontainerStats.Interfaces[i].TxDropped,
-		}
-	}
-
-	// Add to base struct for backwards compatibility.
-	if len(ret.Network.Interfaces) > 0 {
-		ret.Network.InterfaceStats = ret.Network.Interfaces[0]
-	}
 }
 
 // read from pids path not cpu
@@ -913,23 +809,126 @@ func newContainerStats(libcontainerStats *libcontainer.Stats, includedMetrics co
 	}
 
 	if s := libcontainerStats.CgroupStats; s != nil {
-		setCPUStats(s, ret, includedMetrics.Has(container.PerCpuUsageMetrics))
-		if includedMetrics.Has(container.DiskIOMetrics) {
-			setDiskIoStats(s, ret)
+		// setCPUStats(s, ret, includedMetrics.Has(container.PerCpuUsageMetrics))
+		ret.Cpu.Usage.User = s.CpuStats.CpuUsage.UsageInUsermode
+		ret.Cpu.Usage.System = s.CpuStats.CpuUsage.UsageInKernelmode
+		ret.Cpu.Usage.Total = s.CpuStats.CpuUsage.TotalUsage
+		ret.Cpu.CFS.Periods = s.CpuStats.ThrottlingData.Periods
+		ret.Cpu.CFS.ThrottledPeriods = s.CpuStats.ThrottlingData.ThrottledPeriods
+		ret.Cpu.CFS.ThrottledTime = s.CpuStats.ThrottlingData.ThrottledTime
+
+		if includedMetrics.Has(container.PerCpuUsageMetrics) {
+			if len(s.CpuStats.CpuUsage.PercpuUsage) != 0 {
+				// libcontainer's 'GetStats' can leave 'PercpuUsage' nil if it skipped the
+				// cpuacct subsystem.
+				ret.Cpu.Usage.PerCpu = s.CpuStats.CpuUsage.PercpuUsage
+			}
 		}
-		setMemoryStats(s, ret)
+
+		if includedMetrics.Has(container.DiskIOMetrics) {
+			// setDiskIoStats(s, ret)
+			ret.DiskIo.IoServiceBytes = diskStatsCopy(s.BlkioStats.IoServiceBytesRecursive)
+			ret.DiskIo.IoServiced = diskStatsCopy(s.BlkioStats.IoServicedRecursive)
+			ret.DiskIo.IoQueued = diskStatsCopy(s.BlkioStats.IoQueuedRecursive)
+			ret.DiskIo.Sectors = diskStatsCopy(s.BlkioStats.SectorsRecursive)
+			ret.DiskIo.IoServiceTime = diskStatsCopy(s.BlkioStats.IoServiceTimeRecursive)
+			ret.DiskIo.IoWaitTime = diskStatsCopy(s.BlkioStats.IoWaitTimeRecursive)
+			ret.DiskIo.IoMerged = diskStatsCopy(s.BlkioStats.IoMergedRecursive)
+			ret.DiskIo.IoTime = diskStatsCopy(s.BlkioStats.IoTimeRecursive)
+		}
+		// setMemoryStats(s, ret)
+		ret.Memory.Usage = s.MemoryStats.Usage.Usage
+		ret.Memory.MaxUsage = s.MemoryStats.Usage.MaxUsage
+		ret.Memory.Failcnt = s.MemoryStats.Usage.Failcnt
+
+		if cgroups.IsCgroup2UnifiedMode() {
+			ret.Memory.Cache = s.MemoryStats.Stats["file"]
+			ret.Memory.RSS = s.MemoryStats.Stats["anon"]
+			ret.Memory.Swap = s.MemoryStats.SwapUsage.Usage - s.MemoryStats.Usage.Usage
+			ret.Memory.MappedFile = s.MemoryStats.Stats["file_mapped"]
+		} else if s.MemoryStats.UseHierarchy {
+			ret.Memory.Cache = s.MemoryStats.Stats["total_cache"]
+			ret.Memory.RSS = s.MemoryStats.Stats["total_rss"]
+			ret.Memory.Swap = s.MemoryStats.Stats["total_swap"]
+			ret.Memory.MappedFile = s.MemoryStats.Stats["total_mapped_file"]
+		} else {
+			ret.Memory.Cache = s.MemoryStats.Stats["cache"]
+			ret.Memory.RSS = s.MemoryStats.Stats["rss"]
+			ret.Memory.Swap = s.MemoryStats.Stats["swap"]
+			ret.Memory.MappedFile = s.MemoryStats.Stats["mapped_file"]
+		}
+		if v, ok := s.MemoryStats.Stats["pgfault"]; ok {
+			ret.Memory.ContainerData.Pgfault = v
+			ret.Memory.HierarchicalData.Pgfault = v
+		}
+		if v, ok := s.MemoryStats.Stats["pgmajfault"]; ok {
+			ret.Memory.ContainerData.Pgmajfault = v
+			ret.Memory.HierarchicalData.Pgmajfault = v
+		}
+
+		inactiveFileKeyName := "total_inactive_file"
+		if cgroups.IsCgroup2UnifiedMode() {
+			inactiveFileKeyName = "inactive_file"
+		}
+
+		workingSet := ret.Memory.Usage
+		if v, ok := s.MemoryStats.Stats[inactiveFileKeyName]; ok {
+			if workingSet < v {
+				workingSet = 0
+			} else {
+				workingSet -= v
+			}
+		}
+		ret.Memory.WorkingSet = workingSet
+
 		if includedMetrics.Has(container.MemoryNumaMetrics) {
-			setMemoryNumaStats(s, ret)
+			// setMemoryNumaStats(s, ret)
+			ret.Memory.ContainerData.NumaStats.File = getNumaStats(s.MemoryStats.PageUsageByNUMA.File.Nodes)
+			ret.Memory.ContainerData.NumaStats.Anon = getNumaStats(s.MemoryStats.PageUsageByNUMA.Anon.Nodes)
+			ret.Memory.ContainerData.NumaStats.Unevictable = getNumaStats(s.MemoryStats.PageUsageByNUMA.Unevictable.Nodes)
+
+			ret.Memory.HierarchicalData.NumaStats.File = getNumaStats(s.MemoryStats.PageUsageByNUMA.Hierarchical.File.Nodes)
+			ret.Memory.HierarchicalData.NumaStats.Anon = getNumaStats(s.MemoryStats.PageUsageByNUMA.Hierarchical.Anon.Nodes)
+			ret.Memory.HierarchicalData.NumaStats.Unevictable = getNumaStats(s.MemoryStats.PageUsageByNUMA.Hierarchical.Unevictable.Nodes)
 		}
 		if includedMetrics.Has(container.HugetlbUsageMetrics) {
-			setHugepageStats(s, ret)
+			// setHugepageStats(s, ret)
+			ret.Hugetlb = make(map[string]info.HugetlbStats)
+			for k, v := range s.HugetlbStats {
+				ret.Hugetlb[k] = info.HugetlbStats{
+					Usage:    v.Usage,
+					MaxUsage: v.MaxUsage,
+					Failcnt:  v.Failcnt,
+				}
+			}
 		}
 		if includedMetrics.Has(container.CPUSetMetrics) {
-			setCPUSetStats(s, ret)
+			// setCPUSetStats(s, ret)
+			ret.CpuSet.MemoryMigrate = s.CPUSetStats.MemoryMigrate
 		}
 	}
+
 	if len(libcontainerStats.Interfaces) > 0 {
-		setNetworkStats(libcontainerStats, ret)
+		// setNetworkStats(libcontainerStats, ret)
+		ret.Network.Interfaces = make([]info.InterfaceStats, len(libcontainerStats.Interfaces))
+		for i := range libcontainerStats.Interfaces {
+			ret.Network.Interfaces[i] = info.InterfaceStats{
+				Name:      libcontainerStats.Interfaces[i].Name,
+				RxBytes:   libcontainerStats.Interfaces[i].RxBytes,
+				RxPackets: libcontainerStats.Interfaces[i].RxPackets,
+				RxErrors:  libcontainerStats.Interfaces[i].RxErrors,
+				RxDropped: libcontainerStats.Interfaces[i].RxDropped,
+				TxBytes:   libcontainerStats.Interfaces[i].TxBytes,
+				TxPackets: libcontainerStats.Interfaces[i].TxPackets,
+				TxErrors:  libcontainerStats.Interfaces[i].TxErrors,
+				TxDropped: libcontainerStats.Interfaces[i].TxDropped,
+			}
+		}
+
+		// Add to base struct for backwards compatibility.
+		if len(ret.Network.Interfaces) > 0 {
+			ret.Network.InterfaceStats = ret.Network.Interfaces[0]
+		}
 	}
 	return ret
 }
